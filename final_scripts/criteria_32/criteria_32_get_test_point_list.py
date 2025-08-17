@@ -35,6 +35,7 @@ def get_test_point_list():
     get_test_point_list_re = pd.DataFrame({
         'original_row': filtered_df['_original_index'] + 2,
         'testpoint_id': filtered_df['REFDES'].astype(str),
+        'net_name': filtered_df['NET_NAME'].astype(str),
         'shape_name': filtered_df['GRAPHIC_DATA_NAME'].astype(str),
         'x': filtered_df['GRAPHIC_DATA_1'].astype(float),
         'y': filtered_df['GRAPHIC_DATA_2'].astype(float),
@@ -57,10 +58,10 @@ if __name__ == '__main__':
 
     start_time = time.time()
     result_df = get_test_point_list()
-    title = "🔍 criteria_37_2 - 获取测试点清单"
+    title = "🔍 criteria_32_get_connector_list - 获取测试点清单"
 
     if result_df is not None and not result_df.empty:
-        print("==================================================")
+        print("\n==================================================")
         print(f" {title}")
         if args.full:
             print(" Mode: Full Mode (--full)")

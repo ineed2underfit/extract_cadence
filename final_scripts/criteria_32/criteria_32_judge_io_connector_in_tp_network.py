@@ -9,8 +9,8 @@ import re
 # 添加上级目录到Python路径，以便导入criteria_32_1和criteria_32_2
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from criteria_32_1 import get_test_point_list
-from criteria_32_2 import get_connector_list
+from criteria_32_get_test_point_list import get_test_point_list
+from criteria_32_get_connector_list import get_connector_list
 
 
 def judge_io_connector_in_tp_network():

@@ -99,7 +99,6 @@ if __name__ == '__main__':
             print(" Mode: Default (use -f or --full to show all)")
             print("==================================================")
             print(result_df)
-            print(f"\n[{result_df.shape[0]} rows x {result_df.shape[1]} columns]")
 
     end_time = time.time()
     if result_df is not None:
