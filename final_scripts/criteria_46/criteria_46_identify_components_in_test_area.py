@@ -4,148 +4,180 @@ import numpy as np
 import argparse
 import time
 import os
-import sys
+from criteria_46_get_connector_list import get_connector_list
 
-# 动态地将父目录添加到 sys.path，以便导入兄弟模块
-try:
-    # 获取当前脚本所在的目录 (criteria_46)
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    # 获取父目录 (final_scripts)
-    parent_dir = os.path.dirname(current_dir)
-    if parent_dir not in sys.path:
-        sys.path.append(parent_dir)
-    # 从兄弟目录 criteria_46 中导入 get_connector_list 函数
-    from criteria_46.criteria_46_get_connector_list import get_connector_list
-except (ImportError, NameError) as e:
-    print(f"错误：无法导入依赖的 get_connector_list 函数: {e}")
-    print("请确保 criteria_46_get_connector_list.py 文件存在于同一个 criteria_46 文件夹下。")
-    # 在无法导入时提供一个虚拟函数，以便程序能继续执行并提示错误，而不是直接崩溃
-    def get_connector_list():
-        print("错误：get_connector_list 依赖未能加载，将返回空结果。")
-        return pd.DataFrame(columns=['connector_id', 'x_min', 'y_min', 'x_max', 'y_max'])
+def identify_components_in_test_area():
+    """
+    识别位于连接器测试区域内的元器件。
 
-def calculate_component_boundaries():
+    流程:
+    1.  调用 `get_connector_list()` 获取连接器的位置信息。
+    2.  为每个连接器定义一个外扩 787mil 的测试区域。
+    3.  从 Excel 的 'SYM_NAME' 工作表加载所有元器件的边界定义。
+    4.  筛选出有效的元器件边界数据 (`PLACE_BOUND_TOP/BOTTOM`, `RECTANGLE/LINE`)。
+    5.  计算每个元器件的精确边界框 (bounding box)。
+    6.  遍历所有连接器和元器件对，判断元器件是否与连接器的测试区域重叠。
+    7.  返回一个包含所有分析结果的 DataFrame。
+
+    数据来源:
+        - 函数: `criteria_46_get_connector_list.get_connector_list()`
+        - Excel 文件: 'parsed_tables_250804.xlsx'
+        - 工作表: 'SYM_NAME'
+
+    返回:
+        pandas.DataFrame: 命名为 `identify_components_in_test_area_re`，包含以下字段:
+                          - `connector_id` (str): 连接器 ID。
+                          - `component_id` (str): 元器件 ID。
+                          - `expansion_distance` (float): 固定的外扩距离 (787)。
+                          - `test_area_x1`, `test_area_y1`, `test_area_x2`, `test_area_y2` (float): 连接器测试区域的坐标。
+                          - `component_x1`, `component_y1`, `component_x2`, `component_y2` (float): 元器件的边界坐标。
+                          - `is_in_test_area` (bool): 元器件是否与测试区域重叠。
     """
-    从Excel的SYM_NAME工作表中提取所有元件(component)的边界信息。
-    """
+    # 1. 获取连接器列表及其边界
+    connectors_df = get_connector_list()
+    if connectors_df.empty:
+        print("警告: 未能从 get_connector_list() 获取任何连接器数据，无法继续。")
+        return pd.DataFrame()
+
+    # 2. 定义测试区域
+    expansion_distance = 787.0
+    connectors_df['expansion_distance'] = expansion_distance
+    connectors_df['test_area_x1'] = connectors_df['x_min'] - expansion_distance
+    connectors_df['test_area_y1'] = connectors_df['y_min'] - expansion_distance
+    connectors_df['test_area_x2'] = connectors_df['x_max'] + expansion_distance
+    connectors_df['test_area_y2'] = connectors_df['y_max'] + expansion_distance
+
+    # 3. 加载元器件数据
     try:
         script_dir = os.path.dirname(os.path.abspath(__file__))
         excel_file_path = os.path.join(os.path.dirname(script_dir), 'parsed_tables_250804.xlsx')
     except NameError:
-        excel_file_path = r'E:\pycharm_projects\testability_projects\extract_cadence\final_scripts\parsed_tables_250804.xlsx'
+        excel_file_path = r'G:\python_projects\testability_projects\extract_cadence\final_scripts\parsed_tables_250804.xlsx'
 
     try:
-        df = pd.read_excel(excel_file_path, sheet_name='SYM_NAME')
+        sym_name_df = pd.read_excel(excel_file_path, sheet_name='SYM_NAME')
+    except FileNotFoundError:
+        print(f"错误: 未找到 '{excel_file_path}' 文件。")
+        return pd.DataFrame()
     except Exception as e:
-        print(f"读取Excel文件时发生错误: {e}")
+        print(f"读取 Excel 文件时发生错误: {e}")
         return pd.DataFrame()
 
-    condition = (
-        df['SUBCLASS'].isin(['PLACE_BOUND_TOP', 'PLACE_BOUND_BOTTOM']) &
-        df['GRAPHIC_DATA_NAME'].isin(['LINE', 'RECTANGLE'])
+    # 4. 筛选元器件的边界定义
+    comp_condition = (
+        sym_name_df['SUBCLASS'].isin(['PLACE_BOUND_TOP', 'PLACE_BOUND_BOTTOM']) &
+        sym_name_df['GRAPHIC_DATA_NAME'].isin(['RECTANGLE', 'LINE'])
     )
-    filtered_df = df[condition].copy()
-
-    if filtered_df.empty:
+    components_raw_df = sym_name_df[comp_condition].copy()
+    
+    if components_raw_df.empty:
+        print("警告: 在 'SYM_NAME' 表中未找到任何元器件的边界定义。")
         return pd.DataFrame()
 
+    # 保留原始行号
+    components_raw_df['original_row'] = components_raw_df.index
+
+    # 5. 计算每个元器件的边界框
     coord_cols = ['GRAPHIC_DATA_1', 'GRAPHIC_DATA_2', 'GRAPHIC_DATA_3', 'GRAPHIC_DATA_4']
     for col in coord_cols:
-        filtered_df[col] = pd.to_numeric(filtered_df[col], errors='coerce')
+        components_raw_df[col] = pd.to_numeric(components_raw_df[col], errors='coerce')
 
-    rect_df = filtered_df[filtered_df['GRAPHIC_DATA_NAME'] == 'RECTANGLE'].copy()
-    line_df = filtered_df[filtered_df['GRAPHIC_DATA_NAME'] == 'LINE'].copy()
+    # 分离 RECTANGLE 和 LINE
+    rect_df = components_raw_df[components_raw_df['GRAPHIC_DATA_NAME'] == 'RECTANGLE'].copy()
+    line_df = components_raw_df[components_raw_df['GRAPHIC_DATA_NAME'] == 'LINE'].copy()
 
-    processed_results = []
+    processed_components = []
 
+    # 处理 RECTANGLE (聚合版本)
     if not rect_df.empty:
-        rect_df['comp_x_min'] = np.minimum(rect_df['GRAPHIC_DATA_1'], rect_df['GRAPHIC_DATA_3'])
-        rect_df['comp_y_min'] = np.minimum(rect_df['GRAPHIC_DATA_2'], rect_df['GRAPHIC_DATA_4'])
-        rect_df['comp_x_max'] = np.maximum(rect_df['GRAPHIC_DATA_1'], rect_df['GRAPHIC_DATA_3'])
-        rect_df['comp_y_max'] = np.maximum(rect_df['GRAPHIC_DATA_2'], rect_df['GRAPHIC_DATA_4'])
-        processed_results.append(rect_df[['REFDES', 'comp_x_min', 'comp_y_min', 'comp_x_max', 'comp_y_max']])
+        # 首先，计算每个单独矩形行的边界
+        rect_df['x1'] = np.minimum(rect_df['GRAPHIC_DATA_1'], rect_df['GRAPHIC_DATA_3'])
+        rect_df['y1'] = np.minimum(rect_df['GRAPHIC_DATA_2'], rect_df['GRAPHIC_DATA_4'])
+        rect_df['x2'] = np.maximum(rect_df['GRAPHIC_DATA_1'], rect_df['GRAPHIC_DATA_3'])
+        rect_df['y2'] = np.maximum(rect_df['GRAPHIC_DATA_2'], rect_df['GRAPHIC_DATA_4'])
+        
+        # 按 REFDES 分组，计算包围所有矩形的总边界
+        rect_bounds = rect_df.groupby('REFDES').agg(
+            component_x1=('x1', 'min'),
+            component_y1=('y1', 'min'),
+            component_x2=('x2', 'max'),
+            component_y2=('y2', 'max')
+        )
+        
+        # 获取每个组件的第一个原始行号作为代表
+        rect_meta = rect_df[['REFDES', 'original_row']].drop_duplicates(subset=['REFDES']).set_index('REFDES')
+        
+        rect_processed = rect_meta.join(rect_bounds).reset_index()
+        processed_components.append(rect_processed)
 
+    # 处理 LINE
     if not line_df.empty:
-        x_coords = pd.concat([line_df[['REFDES', 'GRAPHIC_DATA_1']].rename(columns={'GRAPHIC_DATA_1': 'x'}), line_df[['REFDES', 'GRAPHIC_DATA_3']].rename(columns={'GRAPHIC_DATA_3': 'x'})])
-        y_coords = pd.concat([line_df[['REFDES', 'GRAPHIC_DATA_2']].rename(columns={'GRAPHIC_DATA_2': 'y'}), line_df[['REFDES', 'GRAPHIC_DATA_4']].rename(columns={'GRAPHIC_DATA_4': 'y'})])
-        x_bounds = x_coords.groupby('REFDES')['x'].agg(['min', 'max']).rename(columns={'min': 'comp_x_min', 'max': 'comp_x_max'})
-        y_bounds = y_coords.groupby('REFDES')['y'].agg(['min', 'max']).rename(columns={'min': 'comp_y_min', 'max': 'comp_y_max'})
-        line_meta = line_df[['REFDES']].drop_duplicates(subset=['REFDES']).set_index('REFDES')
+        x_coords = pd.concat([
+            line_df[['REFDES', 'GRAPHIC_DATA_1']].rename(columns={'GRAPHIC_DATA_1': 'x'}),
+            line_df[['REFDES', 'GRAPHIC_DATA_3']].rename(columns={'GRAPHIC_DATA_3': 'x'})
+        ])
+        y_coords = pd.concat([
+            line_df[['REFDES', 'GRAPHIC_DATA_2']].rename(columns={'GRAPHIC_DATA_2': 'y'}),
+            line_df[['REFDES', 'GRAPHIC_DATA_4']].rename(columns={'GRAPHIC_DATA_4': 'y'})
+        ])
+        x_bounds = x_coords.groupby('REFDES')['x'].agg(['min', 'max']).rename(columns={'min': 'component_x1', 'max': 'component_x2'})
+        y_bounds = y_coords.groupby('REFDES')['y'].agg(['min', 'max']).rename(columns={'min': 'component_y1', 'max': 'component_y2'})
+        
+        line_meta = line_df[['REFDES', 'original_row']].drop_duplicates(subset=['REFDES']).set_index('REFDES')
         line_processed = line_meta.join(x_bounds).join(y_bounds).reset_index()
-        processed_results.append(line_processed)
+        processed_components.append(line_processed)
 
-    if not processed_results:
+    if not processed_components:
+        print("警告: 处理后没有有效的元器件边界数据。")
         return pd.DataFrame()
 
-    return pd.concat(processed_results, ignore_index=True).rename(columns={'REFDES': 'component_id'})
+    components_df = pd.concat(processed_components, ignore_index=True).rename(columns={'REFDES': 'component_id'})
 
-def identify_components_in_test_area():
-    """
-    识别每个连接器测试区域内的所有元件。
-    """
-    print("步骤 1/3: 从 criteria_46_get_connector_list 获取连接器数据...")
-    connectors_df = get_connector_list()
-    if connectors_df.empty:
-        print("警告: 未能获取到连接器数据，无法继续。")
-        return pd.DataFrame()
-
-    print("步骤 2/3: 计算所有元件的边界...")
-    components_df = calculate_component_boundaries()
+    # 6. 判断重叠
     if components_df.empty:
-        print("警告: 未能计算出任何元件的边界，无法继续。")
+        print("警告: 没有有效的元器件可供比较。")
         return pd.DataFrame()
-
-    print("步骤 3/3: 交叉匹配连接器测试区域与元件...")
-    expansion_distance = 787.0
-
-    # 计算测试区域
-    connectors_df['test_x_min'] = connectors_df['x_min'] - expansion_distance
-    connectors_df['test_y_min'] = connectors_df['y_min'] - expansion_distance
-    connectors_df['test_x_max'] = connectors_df['x_max'] + expansion_distance
-    connectors_df['test_y_max'] = connectors_df['y_max'] + expansion_distance
-
-    # 使用 cross join 创建所有可能的组合
+        
+    # 使用 cross join 生成所有 connector 和 component 的组合
     connectors_df['_key'] = 1
     components_df['_key'] = 1
-    combined_df = pd.merge(connectors_df, components_df, on='_key').drop('_key', axis=1)
+    cross_join_df = pd.merge(connectors_df, components_df, on='_key', how='outer').drop('_key', axis=1)
 
-    # 筛选出所有相交的组合
-    intersect_condition = (
-        (combined_df['test_x_min'] < combined_df['comp_x_max']) &
-        (combined_df['test_x_max'] > combined_df['comp_x_min']) &
-        (combined_df['test_y_min'] < combined_df['comp_y_max']) &
-        (combined_df['test_y_max'] > combined_df['comp_y_min'])
-    )
-    intersected_df = combined_df[intersect_condition].copy()
+    # 向量化计算重叠
+    overlap_x = (cross_join_df['test_area_x1'] < cross_join_df['component_x2']) & (cross_join_df['test_area_x2'] > cross_join_df['component_x1'])
+    overlap_y = (cross_join_df['test_area_y1'] < cross_join_df['component_y2']) & (cross_join_df['test_area_y2'] > cross_join_df['component_y1'])
+    cross_join_df['is_in_test_area'] = overlap_x & overlap_y
 
-    if intersected_df.empty:
-        print("完成：在所有连接器的测试区域内均未发现重叠元件。")
-        return pd.DataFrame()
-
-    # 格式化最终输出
-    get_connector_list_re = pd.DataFrame()
-    get_connector_list_re['connector_id'] = intersected_df['connector_id']
-    get_connector_list_re['component_id'] = intersected_df['component_id']
-    get_connector_list_re['expansion_distance'] = expansion_distance
-    # 应用新的格式化规则：保留4位小数，并用", "连接
-    get_connector_list_re['test_area_min_xy'] = intersected_df['test_x_min'].round(4).astype(str) + ',' + intersected_df['test_y_min'].round(4).astype(str)
-    get_connector_list_re['test_area_max_xy'] = intersected_df['test_x_max'].round(4).astype(str) + ',' + intersected_df['test_y_max'].round(4).astype(str)
-    get_connector_list_re['component_min_xy'] = intersected_df['comp_x_min'].round(4).astype(str) + ',' + intersected_df['comp_y_min'].round(4).astype(str)
-    get_connector_list_re['component_max_xy'] = intersected_df['comp_x_max'].round(4).astype(str) + ',' + intersected_df['comp_y_max'].round(4).astype(str)
+    # 7. 格式化最终输出
+    result_cols = [
+        'connector_id', 'component_id', 'expansion_distance',
+        'test_area_x1', 'test_area_y1', 'test_area_x2', 'test_area_y2',
+        'component_x1', 'component_y1', 'component_x2', 'component_y2',
+        'is_in_test_area'
+    ]
+    identify_components_in_test_area_re = cross_join_df[result_cols]
     
-    # 保留原始索引（这里以connector的原始索引为准）
-    get_connector_list_re.index = intersected_df.index
+    # 合并原始行号并设为索引
+    id_to_row_map = components_df[['component_id', 'original_row']].drop_duplicates(subset=['component_id'])
+    final_df_with_row = pd.merge(
+        identify_components_in_test_area_re,
+        id_to_row_map,
+        on='component_id',
+        how='left'
+    )
+    final_df = final_df_with_row.set_index('original_row', drop=True)
+    final_df.index.name = None
 
-    return get_connector_list_re
+    return final_df
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description="识别连接器测试区域内的所有元件。")
+    parser = argparse.ArgumentParser(description="识别位于连接器测试区域内的元器件。 সন")
     parser.add_argument('-f', '--full', action='store_true', help="完整显示所有行和列。")
     args = parser.parse_args()
 
     start_time = time.time()
     result_df = identify_components_in_test_area()
-    title = "🎯 criteria_46 - 识别测试区域内的元件"
+    title = "🔩 criteria_46 - 识别测试区域内的元器件"
 
     if result_df is not None and not result_df.empty:
         print("\n==================================================")

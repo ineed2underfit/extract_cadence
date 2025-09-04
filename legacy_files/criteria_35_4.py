@@ -22,7 +22,7 @@ try:
 except ImportError as e:
     print(f"Fatal Error: Could not import necessary functions.")
     print(f"Details: {e}")
-    print("Please ensure 'criteria_35_1.py' and 'criteria_35_2.py' exist in the same directory.")
+    print("Please ensure 'criteria_35_get_test_point_list.py' and 'criteria_35_get_component_pads_info.py' exist in the same directory.")
     sys.exit(1)
 
 # --- Geometry Calculation Functions (Optimized with Shapely) ---
@@ -107,7 +107,7 @@ def judge_tp_pad_pin_positions():
 # --- Script Execution Block ---
 
 if __name__ == '__main__':
-    # --- Argument Parsing (imitating criteria_35_3.py) ---
+    # --- Argument Parsing (imitating criteria_35_get_component_pins_info.py) ---
     title = "criteria_35_4 - Judge TP/Pad Position Overlaps"
     parser = argparse.ArgumentParser(description=title)
     parser.add_argument('-f', '--full', action='store_true', help="Full display mode, shows all rows and columns.")

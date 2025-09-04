@@ -120,7 +120,7 @@ if __name__ == '__main__':
 
     start_time = time.time()
     result_df = get_component_list()
-    title = "🔍 criteria_37 - 获取元器件清单"
+    title = "🔍 criteria_37_get_component_list - 获取元器件清单"
 
     if result_df is not None and not result_df.empty:
         print("==================================================")

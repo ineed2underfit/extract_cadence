@@ -1,63 +1,57 @@
 import pandas as pd
 import time
 import argparse
-import os
+import numpy as np
 
-def get_test_point_list():
+def get_component_pins_info():
     """
-    从 Excel 文件中提取测试点列表信息。
+    从 Excel 文件中提取元器件焊盘信息。
     """
-    # 构建相对于脚本文件所在目录的绝对路径
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    excel_file = os.path.join(script_dir, '..', 'parsed_tables_250804.xlsx')
-    
+    excel_file = '../parsed_tables_250804.xlsx'
     try:
         df = pd.read_excel(excel_file, sheet_name='SYM_NAME', engine='openpyxl')
     except FileNotFoundError:
-        print(f"错误：无法找到文件 '{excel_file}'。请确保文件在正确的目录中。")
+        print(f"错误：无法找到文件 '{excel_file}'。请确保文件在当前目录中。")
         return pd.DataFrame()
     except Exception as e:
         print(f"读取 Excel 文件时发生错误: {e}")
         return pd.DataFrame()
 
-    # 保留原始行号，以便追溯
     df.reset_index(inplace=True)
     df.rename(columns={'index': '_original_index'}, inplace=True)
 
-    # 1. Apply all filtering conditions
+    # 筛选条件
     filtered_df = df[
-        (df['SUBCLASS'].isin(['SOLDERMASK_TOP', 'SOLDERMASK_BOTTOM'])) &
         (df['CLASS'] == 'PIN') &
-        (df['REFDES'].str.startswith('TP', na=False))
+        (df['SUBCLASS'].isin(['TOP', 'BOTTOM']))
     ].copy()
 
-    # 2. Build the new DataFrame with the required format
-    get_test_point_list_re = pd.DataFrame({
+    # 创建新的 DataFrame
+    get_component_pins_info_re = pd.DataFrame({
         'original_row': filtered_df['_original_index'] + 2,
-        'testpoint_id': filtered_df['REFDES'].astype(str),
-        'shape_name': filtered_df['GRAPHIC_DATA_NAME'].astype(str),
-        'x': filtered_df['GRAPHIC_DATA_1'].astype(float),
-        'y': filtered_df['GRAPHIC_DATA_2'].astype(float),
-        'width': filtered_df['GRAPHIC_DATA_3'].astype(float),
-        'height': filtered_df['GRAPHIC_DATA_4'].astype(float),
+        'component_id': filtered_df['REFDES'].astype(str),
+        'pin_id': filtered_df['REFDES'].astype(str) + '_' + filtered_df['PIN_NUMBER'].astype(str),
+        'PAD_STACK_NAME': filtered_df['PAD_STACK_NAME'].astype(str),
+        'PAD_SHAPE_NAME': filtered_df['PAD_SHAPE_NAME'].astype(str),
+        'x': filtered_df['PIN_X'].astype(float),
+        'y': filtered_df['PIN_Y'].astype(float),
         'layer': filtered_df['SUBCLASS'].astype(str)
     })
     
-    # 仿照模板，将原始行号作为索引，并排序
-    get_test_point_list_re.set_index('original_row', inplace=True)
-    get_test_point_list_re.sort_index(inplace=True)
-    get_test_point_list_re.index.name = None # 清除索引名称
+    get_component_pins_info_re.set_index('original_row', inplace=True)
+    get_component_pins_info_re.sort_index(inplace=True)
+    get_component_pins_info_re.index.name = None
 
-    return get_test_point_list_re
+    return get_component_pins_info_re
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description="从 Excel 文件提取测试点清单。")
+    parser = argparse.ArgumentParser(description="从 Excel 文件提取元器件焊盘/管脚清单。")
     parser.add_argument('-f', '--full', action='store_true', help="完整显示所有行和列。")
     args = parser.parse_args()
 
     start_time = time.time()
-    result_df = get_test_point_list()
-    title = "🔍 criteria_35_1 - 获取测试点清单"
+    result_df = get_component_pins_info()
+    title = "🔍 criteria_35_get_component_pins_info - 获取元器件焊管脚清单"
 
     if result_df is not None and not result_df.empty:
         print("==================================================")
@@ -65,7 +59,6 @@ if __name__ == '__main__':
         if args.full:
             print(" Mode: Full Mode (--full)")
             print("==================================================")
-            # 设置 pandas 显示选项以完整显示
             with pd.option_context('display.max_rows', None, 'display.max_columns', None, 'display.width', 1000):
                 print(result_df)
             print(f"\n[{result_df.shape[0]} rows x {result_df.shape[1]} columns]")

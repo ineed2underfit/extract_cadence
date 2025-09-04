@@ -57,7 +57,7 @@ if __name__ == '__main__':
 
     start_time = time.time()
     result_df = get_test_point_list()
-    title = "🔍 criteria_37_2 - 获取测试点清单"
+    title = "🔍 criteria_37_get_test_point_list - 获取测试点清单"
 
     if result_df is not None and not result_df.empty:
         print("==================================================")

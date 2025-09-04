@@ -15,12 +15,12 @@ if script_dir not in sys.path:
 
 try:
     # Import the data-gathering functions from sibling scripts
-    from criteria_35_1 import get_test_point_list
-    from criteria_35_2 import get_component_pads_info as get_pad_list
+    from criteria_35_get_test_point_list import get_test_point_list
+    from criteria_35_get_component_pads_info import get_component_pads_info as get_pad_list
 except ImportError as e:
     print(f"Fatal Error: Could not import necessary functions.")
     print(f"Details: {e}")
-    print("Please ensure 'criteria_35_1.py' and 'criteria_35_2.py' exist in the same directory.")
+    print("Please ensure 'criteria_35_get_test_point_list.py' and 'criteria_35_get_component_pads_info.py' exist in the same directory.")
     sys.exit(1)
 
 # --- Geometry Calculation Functions ---

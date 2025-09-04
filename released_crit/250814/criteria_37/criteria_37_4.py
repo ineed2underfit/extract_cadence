@@ -20,7 +20,7 @@ try:
 except ImportError as e:
     print(f"Fatal Error: Could not import necessary functions.")
     print(f"Details: {e}")
-    print("Please ensure 'criteria_37_2.py' and 'criteria_37_3.py' exist in the criteria_37 directory.")
+    print("Please ensure 'criteria_37_get_test_point_list.py' and 'criteria_37_get_component_list.py' exist in the criteria_37 directory.")
     sys.exit(1)
 
 # --- Geometry Calculation Functions ---
@@ -47,7 +47,7 @@ def _dist_signed_point_to_rect(p, rect_min, rect_max):
 def _calculate_distance(tp_shape, tp_params, component_shape, component_params):
     """Dispatcher to calculate distance between two geometric shapes."""
     
-    # Case 1: Testpoint is a Circle (always according to criteria_37_2.py)
+    # Case 1: Testpoint is a Circle (always according to criteria_37_get_test_point_list.py)
     if tp_shape == 'CIRCLE':
         tp_c, tp_r = tp_params
         if component_shape == 'RECT' or component_shape == 'OTHER':  # Treat all non-LINE shapes as RECT
